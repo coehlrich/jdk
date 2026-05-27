@@ -569,12 +569,25 @@ public class InferenceContext {
 
     @Override
     public String toString() {
-        String result = "Inference vars: " + inferencevars + '\n' +
-               "Undet vars: " + undetvars + '\n';
-        if (parentIC != null) {
-            result += "\nParent : " + parentIC.toString();
+        StringBuilder buf = new StringBuilder();
+        for (Type t : this.undetvars) {
+            UndetVar uv = (UndetVar)t;
+            for (Type ub : uv.getBounds(InferenceBound.UPPER)) {
+                if (!ub.toString().equals("java.lang.Object"))
+                    buf.append(String.format("%s <: %s\n", uv.qtype, ub));
+            }
+            for (Type lb : uv.getBounds(InferenceBound.LOWER)) {
+                buf.append(String.format("%s :> %s\n", uv.qtype, lb));
+            }
+            for (Type eb : uv.getBounds(InferenceBound.EQ)) {
+                buf.append(String.format("%s = %s\n", uv.qtype, eb));
+            }
         }
-        return result;
+        if (parentIC != null) {
+            buf.append("\nParent context:\n");
+            buf.append(parentIC);
+        }
+        return buf.toString();
     }
 
     /* Method Types.capture() generates a new type every time it's applied

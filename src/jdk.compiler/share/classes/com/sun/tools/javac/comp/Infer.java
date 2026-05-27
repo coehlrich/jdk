@@ -176,12 +176,27 @@ public class Infer {
                             Warner warn) throws InferenceException {
         //-System.err.println("instantiateMethod(" + tvars + ", " + mt + ", " + argtypes + ")"); //DEBUG
         final InferenceContext inferenceContext = new InferenceContext(this, tvars);  //B0
+        String trace = "";
+        String b0 = "", b2 = "", b2_5 = "", b3 = "";
+        if (dependenciesFolder != null) {
+            Name name = msym.name == msym.name.table.names.init ?
+                    msym.owner.name : msym.name;
+            trace += (resolveContext.attrMode() == AttrMode.SPECULATIVE ? "(Speculative)" : "(Final)") + " (" + resolveContext.step + ") " + " attempt to instantiate method: <" + tvars + "> " + name + mt + (argtypes.nonEmpty() ? (" with arguments: " + argtypes) : "") + "\n";
+            b0 = inferenceContext.toString();
+            if (b0.length() > 0)
+                trace += "Initial Bound Set (B0):\n" + b0;
+        }
         try {
             DeferredAttr.DeferredAttrContext deferredAttrContext =
                         resolveContext.deferredAttrContext(msym, inferenceContext, resultInfo, warn);
 
             resolveContext.methodCheck.argumentsAcceptable(env, deferredAttrContext,   //B2
                     argtypes, mt.getParameterTypes(), warn);
+
+            if (dependenciesFolder != null) {
+                b2 = inferenceContext.toString();
+                trace += "Bound set after Invocation Applicability Inference (B2): " + (!b2.equals(b0) ? ("\n" + b2) : "<Ditto>\n");
+            }
 
             if (resultInfo != null && resultInfo.pt == anyPoly) {
                 doIncorporation(inferenceContext, warn);
@@ -191,6 +206,10 @@ public class Infer {
 
                 //inject return constraints earlier
                 doIncorporation(inferenceContext, warn); //propagation
+                if (dependenciesFolder != null) {
+                    b2_5 = inferenceContext.toString();
+                    trace += "Bound set after incorporation: " + (!b2_5.equals(b2) ? ("\n" + b2_5): "<Ditto>\n");
+                }
 
                 if (!warn.hasNonSilentLint(Lint.LintCategory.UNCHECKED)) {
                     boolean shouldPropagate = shouldPropagate(mt.getReturnType(), resultInfo, inferenceContext);
@@ -201,6 +220,14 @@ public class Infer {
 
                     Type newRestype = generateReturnConstraints(env.tree, resultInfo,  //B3
                             mt, minContext);
+                    if (dependenciesFolder != null) {
+                        b3 = inferenceContext.toString();
+                        if (!b3.equals(b2_5))
+                            trace += "Bound set after generation of return constraints (B3):\n" + b3;
+                        if (minContext != inferenceContext && !minContext.toString().equals(b2_5))
+                            trace += "Bound set after generation of return constraints (B3):\n" + minContext;
+                    }
+
                     mt = (MethodType)types.createMethodTypeWithReturn(mt, newRestype);
 
                     //propagate outwards if needed
@@ -212,6 +239,12 @@ public class Infer {
                             duppedTo.parentIC = inferenceContext;
                         }
                         deferredAttrContext.complete();
+                        if (dependenciesFolder != null) {
+                            trace += "Propagating inference context outwards:\n" + duppedTo;
+                            trace += "Method type at propagation point: " + mt;
+                            trace += "\n-----------------------------------------------";
+                            System.err.println(trace);
+                        }
                         return mt;
                     }
                 }
@@ -222,6 +255,13 @@ public class Infer {
             // minimize as yet undetermined type variables
             inferenceContext.solve(warn);
             mt = (MethodType)inferenceContext.asInstType(mt);
+            if (dependenciesFolder != null) {
+                String bsf = inferenceContext.toString();
+                trace += "Bound set after resolution: " + (((b3.length() > 0 && !bsf.equals(b3)) || b2.length() > 0 && !bsf.equals(b2)) ? ("\n" + bsf) : "<Ditto>\n");
+                trace += "Instantiated Method Type : " + mt;
+                trace += "\n-----------------------------------------------";
+                System.err.println(trace);
+            }
 
             if (resultInfo != null && rs.verboseResolutionMode.contains(VerboseResolutionMode.DEFERRED_INST)) {
                 log.note(env.tree.pos, Notes.DeferredMethodInst(msym, mt, resultInfo.pt));
